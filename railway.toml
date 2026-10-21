@@ -1,0 +1,10 @@
+# Legacy service compatibility. New services use Dockerfile detection and
+# its CMD; set start/restart policy in the dashboard as described in README.md.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "python bot.pyz"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
