@@ -4,12 +4,13 @@ import copy
 import logging
 import re
 import discord
-from .custom import OUTCOME_TYPES, allowed, manager, condition, condition_text, new_field, odds, odds_text, percentage, roll_definition
+from .custom import MAX_ENTRIES, OUTCOME_TYPES, allowed, manager, condition, condition_text, new_field, odds, odds_text, percentage, roll_definition
 from .custom_ui import SessionView, Choice, card, character_embeds, ICONS, NO_MENTIONS
 from .dice import RNG
-from .display import safe, chunks
+from .display import safe, chunks, length, short
 from .errors import RollError, require
 from .wallets import moderator
+from .wallets import text
 from .wallet_ui import reply, shown
 
 log = logging.getLogger(__name__)
@@ -18,6 +19,9 @@ HELP = ('**Create your own command**\nChoose New command, pick Character rolls, 
         '**Character rolls**\nAdd named Dice groups (Origin: 1d5, Stats: 6d20, Power: 1d20). '
         'Add outcome → Named probabilities lets you enter names and chances, such as Uchiha | 5%. '
         'Chances must total exactly 100%; players see only the selected name. '
+        'Add outcome → Class + subclasses creates one class roll and a separate subclass table for each class. '
+        'Enter Class | chance for classes, then Class | Subclass | chance for each subclass. '
+        'Each class and each of its subclass tables must total 100%. Only the matching subclass table rolls. '
         'Relative weights is an alternative that shows the name and numeric draw: 1 and 3 mean 25% and 75%. '
         'Positive decimals with up to four decimal places work. '
         'Use Condition for an earlier roll: Bending >= 61 or Nation == Fire. '
@@ -33,6 +37,47 @@ HELP = ('**Create your own command**\nChoose New command, pick Character rolls, 
         '**Limits**\n20 command slots per server, 20 entries per command, 200 base dice per character, '
         '25 outcomes per odds table. Normal dice expressions support modifiers and custom faces. '
         'Server owner/Administrator/Manage Server can edit characters; server moderators can edit FAQs and shops.')
+
+
+def class_entries(name, classes, subclass_name, subclasses, existing):
+    """Build conditional named rolls with independent odds for every class."""
+    name = text(name, 40, 'class roll name')
+    require(not any(char in name for char in '<>='), 'Class roll names cannot contain <, >, or =.')
+    subclass_name = text(subclass_name, 40, 'subclass label')
+    class_outcomes = odds(classes, percentages=True)
+    require(len(existing) + len(class_outcomes) + 1 <= MAX_ENTRIES,
+            'This class setup needs one entry per class plus the class roll. A command holds at most 20 entries.')
+    require(all('|' not in row['name'] for row in class_outcomes),
+            'Class names in this form cannot contain |.')
+    grouped = {row['name'].casefold(): [] for row in class_outcomes}
+    require(isinstance(subclasses, str) and len(subclasses) <= 3500,
+            'Enter up to 3,500 characters of subclasses.')
+    for line in subclasses.splitlines():
+        if not line.strip(): continue
+        parts = [part.strip() for part in line.split('|')]
+        require(len(parts) == 3, 'Use Class | Subclass | chance on each subclass line.')
+        require(parts[0].casefold() in grouped,
+                f'Unknown class {parts[0][:40]}. Use a class from the first field.')
+        grouped[parts[0].casefold()].append(f'{parts[1]} | {parts[2]}')
+    require(all(grouped.values()), 'Add at least one subclass for every class.')
+    parent = {'id': new_field(), 'name': name, 'type': 'probability', 'outcomes': class_outcomes}
+    created = [parent]
+    used_names = {entry['name'].casefold() for entry in existing} | {name.casefold()}
+    for row in class_outcomes:
+        label = row['name']
+        outcomes = odds('\n'.join(grouped[label.casefold()]), percentages=True)
+        base = f'{subclass_name} · {label}'
+        candidate = short(base, 40)
+        index = 2
+        while candidate.casefold() in used_names:
+            suffix = f' {index}'
+            candidate = short(base, 40 - length(suffix)) + suffix
+            index += 1
+        used_names.add(candidate.casefold())
+        created.append({'id': new_field(), 'name': candidate, 'display_name': subclass_name,
+                        'type': 'probability', 'outcomes': outcomes,
+                        'when': {'field': parent['id'], 'op': '==', 'value': label}})
+    return created
 
 
 class BuilderPanel(SessionView):
@@ -76,7 +121,9 @@ class BuilderPanel(SessionView):
                 discord.SelectOption(label='Named probabilities', value='probability', emoji='✨',
                     description='Exact percentages. Players see only the chosen name.'),
                 discord.SelectOption(label='Relative weights', value='table', emoji='🎲',
-                    description='Relative odds. Show the name and its numeric draw.')], self.outcome_kind,
+                    description='Relative odds. Show the name and its numeric draw.'),
+                discord.SelectOption(label='Class + subclasses', value='classes', emoji='🛡️',
+                    description='Class odds with different subclass odds for each class.')], self.outcome_kind,
                     placeholder='Choose how this outcome works'))
             self.add_button('Back', self.back)
             self.add_button('Help', self.help)
@@ -115,6 +162,7 @@ class BuilderPanel(SessionView):
             embed.add_field(name='Named probabilities', value='Uchiha | 5%\nHyuga | 10%\nUzumaki | 15%\nOther clan | 70%', inline=False)
             embed.add_field(name='Players see', value='**Nation**\nWater Tribes\n\nA named result, with no numeric die or total.', inline=False)
             embed.add_field(name='Relative weights', value='An alternative for ratios such as 1 : 3. Includes a numeric draw in the result.', inline=False)
+            embed.add_field(name='Class + subclasses', value='Add class chances and a subclass table for each class in one form. Only the chosen class’s subclasses roll.', inline=False)
             embed.set_footer(text='Mix outcomes and dice groups in the same command')
             return embed
         if self.command is None or self.page == 'new':
@@ -187,8 +235,8 @@ class BuilderPanel(SessionView):
         await self.update(interaction)
 
     async def outcome_kind(self, interaction, value):
-        require(value in OUTCOME_TYPES and self.command['kind'] == 'roll', 'Choose a valid outcome type.')
-        await interaction.response.send_modal(BuilderInput(self, 'entry', entry_type=value))
+        require(value in (*OUTCOME_TYPES, 'classes') and self.command['kind'] == 'roll', 'Choose a valid outcome type.')
+        await interaction.response.send_modal(BuilderInput(self, 'classes' if value == 'classes' else 'entry', entry_type=value))
 
     async def edit_entry(self, interaction):
         await interaction.response.send_modal(BuilderInput(self, 'edit'))
@@ -282,7 +330,7 @@ class BuilderInput(discord.ui.Modal):
         self.entry = next((e for e in panel.command['draft']['entries'] if e['id'] == panel.selected), None) if panel.command else None
         self.entry_type = self.entry.get('type') if action == 'edit' and self.entry else entry_type
         super().__init__(title={'new': 'Create a command', 'settings': 'Command name & style', 'condition': 'Conditional roll',
-                               'edit': 'Edit entry', 'entry': 'Add entry'}[action], timeout=300)
+                               'edit': 'Edit entry', 'entry': 'Add entry', 'classes': 'Add classes & subclasses'}[action], timeout=300)
         self.fields = {}
         if action in ('new', 'settings'):
             doc = panel.command['draft'] if action == 'settings' else {}
@@ -293,10 +341,19 @@ class BuilderInput(discord.ui.Modal):
         elif action == 'condition':
             self.field('when', 'Only roll when… (blank = always)', 200, default=condition_text(self.entry, panel.command['draft']['entries']),
                        placeholder='Bending >= 61 or Nation == Fire', required=False)
+        elif action == 'classes':
+            self.field('name', 'Class roll name', 40, default='Class')
+            self.field('outcomes', 'Class | chance % (total 100%)', 3500,
+                       placeholder='Fighter | 60%\nMage | 40%', long=True)
+            self.field('subclass_name', 'Subclass player label', 40, default='Subclass')
+            self.field('subclasses', 'Class | Subclass | chance %', 3500,
+                       placeholder='Fighter | Champion | 70%\nFighter | Guardian | 30%\nMage | Evoker | 100%', long=True)
         else:
             old = self.entry if action == 'edit' else {}
-            self.field('name', 'Question' if self.kind == 'faq' else 'Outcome type name' if self.entry_type == 'probability' else 'Roll name' if self.kind == 'roll' else 'Item name',
+            self.field('name', 'Question' if self.kind == 'faq' else 'Entry name (editor)' if old.get('display_name') else 'Outcome type name' if self.entry_type == 'probability' else 'Roll name' if self.kind == 'roll' else 'Item name',
                        60 if self.kind == 'faq' else 40, default=old.get('name', ''))
+            if old.get('display_name'):
+                self.field('display_name', 'Player label', 40, default=old['display_name'])
             if self.kind == 'roll':
                 if self.entry_type in OUTCOME_TYPES:
                     exact = self.entry_type == 'probability'
@@ -343,6 +400,12 @@ class BuilderInput(discord.ui.Modal):
                 color = values['color'].removeprefix('#')
                 require(re.fullmatch(r'[a-fA-F0-9]{6}', color), 'Use a six-digit colour, such as 8B5CF6.')
                 data.update(title=values['title'], description=values['description'], color=int(color, 16))
+            elif self.action == 'classes':
+                require(self.kind == 'roll', 'Classes belong to character rolls.')
+                created = class_entries(values['name'], values['outcomes'], values['subclass_name'],
+                                        values['subclasses'], data['entries'])
+                data['entries'].extend(created)
+                self.panel.selected = created[0]['id']
             else:
                 position = next((i for i, e in enumerate(data['entries']) if e['id'] == self.selected), len(data['entries'])) if self.action in ('edit', 'condition') else len(data['entries'])
                 entry = copy.deepcopy(data['entries'][position]) if self.action in ('edit', 'condition') else {'id': new_field()}
@@ -352,6 +415,7 @@ class BuilderInput(discord.ui.Modal):
                         entry['type'] = self.entry_type
                         if self.entry_type in OUTCOME_TYPES: entry['outcomes'] = odds(values['outcomes'], percentages=self.entry_type == 'probability')
                         else: entry['dice'] = values['dice']
+                        if 'display_name' in values: entry['display_name'] = values['display_name']
                     elif self.kind == 'faq': entry['answer'] = values['answer']
                     else:
                         require(values['price'].isdecimal(), 'Enter a non-negative whole price.')

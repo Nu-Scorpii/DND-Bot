@@ -172,6 +172,9 @@ def validate(data, kind, *, publishing=False):
                             and 0 < r['weight'] <= 1_000_000_000 for r in raw['outcomes']), 'Enter valid weighted outcomes.')
                 exact = item['type'] == 'probability'
                 item['outcomes'] = odds(odds_text(raw['outcomes'], percentages=exact), percentages=exact)
+                if raw.get('display_name') is not None:
+                    require(exact, 'Player labels are available for named probabilities only.')
+                    item['display_name'] = text(raw['display_name'], 40, 'player label')
             total_dice += len(step_plan(item).dice)
             check = raw.get('when')
             if check is not None:
@@ -225,7 +228,8 @@ def roll_definition(document, draw):
         if entry['type'] == 'probability':
             # The internal sample exists only to share the Control pipeline.
             # Neither the player payload nor its replay receipt exposes a die.
-            results.append({'id': entry['id'], 'name': entry['name'], 'type': 'probability', 'outcome': outcome})
+            results.append({'id': entry['id'], 'name': entry.get('display_name', entry['name']),
+                            'type': 'probability', 'outcome': outcome})
         else:
             results.append({'id': entry['id'], 'name': entry['name'], 'dice': result, 'outcome': outcome})
     return {'title': document['title'], 'description': document['description'], 'color': document['color'], 'results': results}

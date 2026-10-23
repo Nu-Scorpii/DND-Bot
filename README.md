@@ -1,4 +1,4 @@
-# Simple Discord Dice Bot · 4.1.1
+# Simple Discord Dice Bot · 4.2.0
 
 Players use `/roll`, `/calculate`, `/avatar`, `/wallet`, and their server's custom commands. Server staff use `/builder` to create character rolls, FAQs, and shops. Moderators use separate currency commands to add, remove, or transfer money.
 
@@ -9,6 +9,8 @@ Run **`/builder` → New command**. Choose **Character rolls**, **FAQ / guide**,
 Character templates support separate named groups such as **Origin · 1d5**, **Stats · 6d20**, and **Power · 1d20+2**, all in one invocation. Add odds tables with named outcomes and exact relative weights, plus optional conditions based on earlier results. Pick a display title, introduction, and accent colour. The six stat dice stay visible as six values.
 
 **Named probabilities** are available under **Add outcome**. Define a separate outcome type such as Clan and give each result an exact chance, for example `Uchiha | 5%`, `Hyuga | 10%`, `Uzumaki | 15%`, and `Other clan | 70%`. These are example campaign odds, not canonical Naruto probabilities. The chances must total 100%. Players see only the selected name—no numeric die, expression, or total. You can combine several probability types with normal dice groups in one command, or publish a command containing just one probability type. Conditions can use the selected name, for example `Clan == Uchiha`. **Relative weights** remains available for named results that also display a numeric draw.
+
+**Classes and subclasses:** Choose **Add outcome → Class + subclasses**. Enter class chances, then subclass chances on lines such as `Fighter | Champion | 70%`. The form creates a class roll and a conditional subclass table for each class. Only the chosen class's table runs; players see a **Class** and **Subclass** name, without numeric draws. Each class's subclass chances must add up to 100%. You can edit each resulting entry in the builder and Publish the command when ready.
 
 Server owners, Administrator, or Manage Server can create/edit character templates. Moderators can also create/edit FAQs and shops. Published commands are available to all server players, subject to Discord's own application-command permissions. Shops charge the buyer's chosen server currency wallet after a confirmation and save purchases in **My items**. They have unlimited stock. FAQs use a question dropdown.
 

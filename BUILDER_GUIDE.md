@@ -1,4 +1,4 @@
-# Your server's command workshop · 4.1.0
+# Your server's command workshop · 4.2.0
 
 **Start with `/builder`.** The workshop opens a private card with dropdowns, buttons, and forms. Pick **New command**, choose a type, and name the slash command. All changes save as drafts; **Publish** makes them available to players.
 
@@ -36,6 +36,28 @@ Chances must add up to **exactly 100%**. The editor rejects an incomplete or exc
 Add multiple outcome types to the same character command and mix them with `1d5`, `6d20`, separate `1d20` groups, modifiers, and conditions. A command may also contain only a named probability type. Each type belongs to the command where you created it. Use **Edit** to change its name, outcomes, chances, or condition, then Publish to update the live command.
 
 For example, create `Bending` with `Bender | 40%` and `Non-bender | 60%`, then add `Bending Strength` as `1d20` with condition `Bending == Bender`. Only a chosen Bender receives the extra d20.
+
+## Add classes and subclasses
+
+Use **Add outcome → Class + subclasses** in a character command. Set the class roll name (for example `Class`) and enter the classes and their chances:
+
+```text
+Fighter | 60%
+Mage | 40%
+```
+
+Set the player label for the second result (for example `Subclass`), then enter one subclass per line with its parent class and chance:
+
+```text
+Fighter | Champion | 70%
+Fighter | Guardian | 30%
+Mage | Evoker | 25%
+Mage | Illusionist | 75%
+```
+
+The class chances must total **100%**, and the subclasses of **each** class must separately total **100%**. Give every class at least one subclass; one subclass can be `100%`. The form saves one class entry plus one conditional subclass entry for each class. For example, **Class: Mage** rolls only the Mage subclass table, and the player sees **Subclass: Evoker** or **Subclass: Illusionist**. Both results show names only. This uses one entry per class plus one for the class roll, within the command's 20 entry limit.
+
+In the editor, each subclass entry has a distinct name such as `Subclass · Mage`, a **Player label** of `Subclass`, and a condition pointing to its class. Edit its probabilities or player label as needed. If you change a class outcome's name, also update its matching subclass entry's condition so it still runs. Preview the draft, then Publish to update the live command.
 
 ## Relative weights as an alternative
 

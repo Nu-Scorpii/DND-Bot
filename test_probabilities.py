@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from ua_bot.builder_ui import BuilderInput, BuilderPanel, HELP as BUILDER_HELP
+from ua_bot.builder_ui import BuilderInput, BuilderPanel, HELP as BUILDER_HELP, class_entries
 from ua_bot.client import DiceBot
 from ua_bot.custom import condition, new_field, odds, odds_text
 from ua_bot.custom_ui import character_embeds
@@ -163,6 +163,78 @@ def test_probability_builder_buttons_form_edit_and_public_command(make_engine):
         payload = response.edit_original_response.await_args.kwargs['embed'].to_dict()
         assert payload['fields'][0]['value'] == '**Fire**'
         assert all(term not in json.dumps(payload) for term in ('Rolls:', 'Total:', '1d8', 'ticket', 'rigger'))
+        panel.stop(); await bot.close()
+    asyncio.run(check())
+
+
+def test_class_subclass_probabilities_follow_the_final_class_result(make_engine):
+    entries = class_entries('Class', 'Fighter | 60%\nMage | 40%', 'Subclass',
+        'Fighter | Champion | 70%\nFighter | Guardian | 30%\n'
+        'Mage | Evoker | 25%\nMage | Illusionist | 75%', [])
+    engine = make_engine([1, 1, 1, 1])
+    cmd = command(engine, entries)
+    parent, fighter, mage = cmd['published']['entries']
+    assert fighter['when'] == {'field': parent['id'], 'op': '==', 'value': 'Fighter'}
+    assert mage['when'] == {'field': parent['id'], 'op': '==', 'value': 'Mage'}
+    rig(engine, cmd, 'force', 4, part=parent['id'])
+    rig(engine, cmd, 'force', 4, part=mage['id'])
+    forced = run(engine, cmd)['character']
+    assert [(item['name'], item['outcome']) for item in forced['results']] == [
+        ('Class', 'Mage'), ('Subclass', 'Illusionist')]
+    assert [item['id'] for item in forced['results']] == [parent['id'], mage['id']]
+    assert [set(item) for item in forced['results']] == [
+        {'id', 'name', 'type', 'outcome'}, {'id', 'name', 'type', 'outcome'}]
+    assert [(field.name, field.value) for field in character_embeds(forced)[0].fields] == [
+        ('Class', '**Mage**'), ('Subclass', '**Illusionist**')]
+    ordinary = run(engine, cmd, request=801, player=43)['character']
+    assert [(item['name'], item['outcome']) for item in ordinary['results']] == [
+        ('Class', 'Fighter'), ('Subclass', 'Champion')]
+    assert engine.rng.calls == 4
+
+
+@pytest.mark.parametrize('classes,subclasses,reason', [
+    ('Fighter | 60%\nMage | 40%', 'Fighter | Champion | 100%', 'every class'),
+    ('Fighter | 60%\nMage | 40%', 'Fighter | Champion | 100%\nRogue | Thief | 100%\nMage | Evoker | 100%', 'Unknown class'),
+    ('Fighter | 60%\nMage | 40%', 'Fighter | Champion | 80%\nMage | Evoker | 100%', '80%'),
+    ('Fighter | 60%\nMage | 40%', 'Fighter | Champion | 100%\nMage | Evoker | 80%\nMage | Illusionist | 30%', '110%'),
+    ('Fighter | 60%\nMage | 40%', 'Fighter | Champion | 100%\nMage | Evoker | 100%\nMage | Evoker | 0%', 'above zero'),
+])
+def test_class_form_requires_complete_separate_subclass_odds(classes, subclasses, reason):
+    with pytest.raises(RollError, match=reason):
+        class_entries('Class', classes, 'Subclass', subclasses, [])
+
+
+def test_class_subclass_builder_form_saves_atomically_and_publishes(make_engine):
+    async def check():
+        bot = DiceBot(make_engine([1, 1])); bot.sync_custom_guild = AsyncMock()
+        cmd = command(bot.engine, entries=[], publish=False)
+        panel = BuilderPanel(bot, current()); await panel.choose_command(current(), str(cmd['id']))
+        await button(panel, 'Add outcome').callback(current(2300))
+        picker = panel.children[0]; picker._values = ['classes']
+        pick = current(2301); await picker.callback(pick)
+        form = pick.response.send_modal.await_args.args[0]
+        assert len(form.to_components()) == 4
+        values = dict(name='Class', outcomes='Fighter | 60%\nMage | 40%', subclass_name='Subclass',
+                      subclasses='Fighter | Champion | 100%\nMage | Evoker | 100%')
+        invalid = BuilderInput(panel, 'classes')
+        failed = current(2302)
+        await submit(invalid, {**values, 'subclasses': 'Fighter | Champion | 100%'}, failed)
+        assert bot.customs.get(100, cmd['id']) == cmd
+        assert 'every class' in failed.followup.send.await_args.args[0]
+        await submit(form, values, current(2303))
+        assert panel.page == 'edit' and len(panel.command['draft']['entries']) == 3
+        payload_limits(panel)
+        branch = panel.command['draft']['entries'][-1]
+        panel.selected = branch['id']
+        edited = BuilderInput(panel, 'edit')
+        assert edited.fields['display_name'].default == 'Subclass'
+        await button(panel, 'Publish').callback(current(2304))
+        response = current(2305, user=42, permissions=())
+        await bot.run_custom(response, identity=cmd['id'])
+        payload = response.edit_original_response.await_args.kwargs['embed'].to_dict()
+        assert [(field['name'], field['value']) for field in payload['fields']] == [
+            ('Class', '**Fighter**'), ('Subclass', '**Champion**')]
+        assert not re.search(r'\brig(?:s|ging|ger)?\b', json.dumps(payload), re.IGNORECASE)
         panel.stop(); await bot.close()
     asyncio.run(check())
 
