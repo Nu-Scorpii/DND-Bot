@@ -139,7 +139,7 @@ def test_dynamic_commands_restore_without_shadowing_avatar_and_remove_on_unpubli
         guild = discord.Object(id=100)
         await bot.clean_guild_commands(guild)
         assert {c.name for c in bot.tree.get_commands(guild=guild)} == {'hero', 'rules'}
-        assert bot.tree.get_command('avatar') is not None and len(bot.tree.get_commands()) == 9
+        assert bot.tree.get_command('avatar') is not None and len(bot.tree.get_commands()) == 10
         dynamic = bot.tree.get_command('hero', guild=guild)
         assert dynamic.to_dict(bot.tree)['options'] == []
         response = current(1300, user=42, permissions=())

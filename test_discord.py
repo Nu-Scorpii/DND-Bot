@@ -17,14 +17,14 @@ def interaction(request=900):
                            response=response, followup=followup, extras={}, edit_original_response=AsyncMock())
 
 
-def test_nine_slash_commands_and_minimal_intents(make_engine):
+def test_ten_slash_commands_and_minimal_intents(make_engine):
     async def check():
         bot = DiceBot(make_engine())
-        assert [command.name for command in bot.tree.get_commands()] == ['roll', 'avatar', 'wallet', 'wallet-add', 'wallet-remove', 'wallet-transfer', 'wallet-manage', 'builder', 'custom']
+        assert [command.name for command in bot.tree.get_commands()] == ['roll', 'calculate', 'avatar', 'wallet', 'wallet-add', 'wallet-remove', 'wallet-transfer', 'wallet-manage', 'builder', 'custom']
         payload = bot.tree.get_commands()[0].to_dict(bot.tree)
         assert [option['name'] for option in payload['options']] == ['dice']
         assert not payload['options'][0]['required']
-        assert bot.tree.get_commands()[1].to_dict(bot.tree).get('options', []) == []
+        assert bot.tree.get_command('avatar').to_dict(bot.tree).get('options', []) == []
         assert not bot.intents.message_content
         assert not bot.intents.guild_messages
         assert bot.intents.dm_messages

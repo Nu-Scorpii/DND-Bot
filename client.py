@@ -6,6 +6,7 @@ import discord
 from discord import app_commands
 from . import __version__
 from .dice import prepare
+from .calculator import calculate, CalculatorError
 from .controls import COMMAND
 from .display import avatar_messages, private_messages, roll_messages, safe, short
 from .errors import RollError
@@ -42,6 +43,11 @@ class DiceBot(discord.Client):
         @app_commands.describe(dice='1d100, 1d100+2, or 1d100-2. Any dice size; leave blank for 1d20.')
         async def roll(interaction: discord.Interaction, dice: str | None = None):
             await self.run_roll(interaction, dice=dice)
+
+        @self.tree.command(name='calculate', description='Add, subtract, multiply, or divide numbers and percentages.')
+        @app_commands.describe(expression='Two numbers and an operator, such as 100 + 20% or 50 / 25%.')
+        async def calculator(interaction: discord.Interaction, expression: str):
+            await self.run_calculator(interaction, expression)
 
         @self.tree.command(name='avatar', description='Roll Avatar IQ, six stats, origin, bending strength for benders, or non-bender combat.')
         @app_commands.guild_only()
@@ -195,6 +201,16 @@ class DiceBot(discord.Client):
         else:
             log.error('Bot command failed: %s', type(underlying).__name__)
             await self.error(interaction, 'Could not finish this command. Please try again.')
+
+    async def run_calculator(self, interaction, expression):
+        try:
+            calculation = calculate(expression)
+        except CalculatorError as exc:
+            await self.error(interaction, str(exc))
+            return
+        await interaction.response.send_message(
+            f'🧮 `{calculation.expression}`\n**Result: {calculation.answer}**',
+            allowed_mentions=NO_MENTIONS)
 
     async def run_roll(self, interaction, *, dice=None, bonus=0, faces=None, keep='all'):
         try:

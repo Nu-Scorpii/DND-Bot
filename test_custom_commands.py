@@ -72,7 +72,7 @@ def test_invalid_odds_fail_cleanly(source):
     with pytest.raises(RollError): odds(source)
 
 
-@pytest.mark.parametrize('name', ['avatar', 'ROLL', '/wallet-transfer', 'rigger', 'custom', 'bad space', '2start', 'a' * 33])
+@pytest.mark.parametrize('name', ['avatar', 'calculate', 'ROLL', '/wallet-transfer', 'rigger', 'custom', 'bad space', '2start', 'a' * 33])
 def test_reserved_or_invalid_commands_cannot_shadow_builtins(name, make_engine):
     with pytest.raises(RollError): command(make_engine(), name=name)
 

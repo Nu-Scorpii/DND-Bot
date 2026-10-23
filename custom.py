@@ -17,7 +17,7 @@ MAX_ENTRIES = 20
 MAX_TEMPLATE_DICE = 200
 KINDS = ('roll', 'faq', 'shop')
 OUTCOME_TYPES = ('table', 'probability')
-RESERVED = {'roll', 'avatar', 'wallet', 'wallet-add', 'wallet-remove', 'wallet-transfer',
+RESERVED = {'roll', 'calculate', 'avatar', 'wallet', 'wallet-add', 'wallet-remove', 'wallet-transfer',
             'wallet-manage', 'builder', 'custom', 'rigger', 'dice'}
 SLUG = re.compile(r'[a-z][a-z0-9_-]{0,31}\Z')
 FIELD = re.compile(r'field_[a-f0-9]{12}\Z')

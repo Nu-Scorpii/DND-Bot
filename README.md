@@ -1,6 +1,6 @@
-# Simple Discord Dice Bot · 4.1.0
+# Simple Discord Dice Bot · 4.1.1
 
-Players use `/roll`, `/avatar`, `/wallet`, and their server's custom commands. Server staff use `/builder` to create character rolls, FAQs, and shops. Moderators use separate currency commands to add, remove, or transfer money.
+Players use `/roll`, `/calculate`, `/avatar`, `/wallet`, and their server's custom commands. Server staff use `/builder` to create character rolls, FAQs, and shops. Moderators use separate currency commands to add, remove, or transfer money.
 
 ## New: your server's command workshop
 
@@ -61,6 +61,21 @@ Advanced rolls still use that same field:
 Custom lists use JSON; text labels need double quotes. Face spelling and capitalization are preserved. Highest/lowest uses one positive dice pool. A die containing any text face has no numeric total and cannot use arithmetic or highest/lowest.
 
 Limits: 100 dice, 1–1 billion sides, 20 expression terms, and a **500-character dice field**, including any custom lists. Lists have at most 1,000 faces each, within that expression limit; text labels have 1–40 characters. Fixed modifiers are whole numbers within ±1 billion. No programming expressions are evaluated.
+
+## Players: `/calculate`
+
+Use `/calculate expression:` with two numbers and one operator (`+`, `-`, `*`, or `/`). Decimals, negative numbers, and a `%` after either number are supported. You can also type `×` and `÷`.
+
+| Expression | Result |
+|---|---:|
+| `2.5 + 3` | `5.5` |
+| `100 + 20%` | `120` |
+| `100 - 20%` | `80` |
+| `100 * 20%` | `20` |
+| `100 / 20%` | `500` |
+| `20% + 5%` | `0.25 (25%)` |
+
+For addition or subtraction, a percentage on the **right** means that percent of the left number: `100 + 20%` adds 20 to 100. When both numbers have `%`, they are portions of 1, so `20% + 5%` is 25%. For multiplication and division, `20%` means `0.2`. A percentage on the left with a plain number uses its fractional value, for example `20% + 5` is `5.2`. The command accepts exactly two operands; it does not roll dice or change wallets. Invalid input and division by zero receive a private error.
 
 ## Players: `/avatar`
 
@@ -146,7 +161,7 @@ For a new service, attach a persistent volume at **`/data`**. Set these variable
 | `BOT_OWNER_ID` | Your own Discord user ID |
 | `BOT_DB_PATH` | Optional: `/data/ua.sqlite3`; omit it to use the actual attached volume automatically |
 
-Railway supplies `RAILWAY_VOLUME_MOUNT_PATH`; do not set it manually. The database must be inside that mount. A local default is `data/ua.sqlite3`. No server ID is needed; a previous `DISCORD_GUILD_ID` is ignored. The bot registers nine global commands and restores each server's published custom commands when it connects, replacing obsolete guild overrides. Discord clients may need a refresh before their cached menus update.
+Railway supplies `RAILWAY_VOLUME_MOUNT_PATH`; do not set it manually. The database must be inside that mount. A local default is `data/ua.sqlite3`. No server ID is needed; a previous `DISCORD_GUILD_ID` is ignored. The bot registers ten global commands and restores each server's published custom commands when it connects, replacing obsolete guild overrides. Discord clients may need a refresh before their cached menus update.
 
 The bot preserves old campaign tables on the volume without loading them. The last 1,000 dice receipts, wallet balances, history, and currency receipts are stored separately. A repeated recent dice interaction returns its original result; duplicate currency submissions are remembered independently of the dice cache.
 
@@ -168,7 +183,7 @@ For local play, copy `.env.example` to `.env`, fill in your token and creator ID
 
 ## Troubleshooting
 
-- Bot online but `/roll`, `/avatar`, or `/wallet` missing: check its server installation, `applications.commands` scope, and channel permissions; refresh Discord's command menu.
+- Bot online but `/roll`, `/calculate`, `/avatar`, or `/wallet` missing: check its server installation, `applications.commands` scope, and channel permissions; refresh Discord's command menu.
 - Checking a new server: `/wallet` creates an empty Main wallet automatically. The creator can rename it or create more with `/wallet-manage`.
 - Adding or moving money: use `/wallet-add`, `/wallet-remove`, or `/wallet-transfer` with actual server moderation permissions. The player balance panel only shows your money and history. Choose a wallet if several exist.
 - Old commands still visible: refresh Discord. Runtime logs report server-command sync failures; a reconnect retries them. Published custom commands are preserved.
