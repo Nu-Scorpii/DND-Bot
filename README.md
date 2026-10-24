@@ -1,4 +1,4 @@
-# Simple Discord Dice Bot · 4.2.0
+# Simple Discord Dice Bot · 4.3.0
 
 Players use `/roll`, `/calculate`, `/avatar`, `/wallet`, and their server's custom commands. Server staff use `/builder` to create character rolls, FAQs, and shops. Moderators use separate currency commands to add, remove, or transfer money.
 
@@ -11,6 +11,8 @@ Character templates support separate named groups such as **Origin · 1d5**, **S
 **Named probabilities** are available under **Add outcome**. Define a separate outcome type such as Clan and give each result an exact chance, for example `Uchiha | 5%`, `Hyuga | 10%`, `Uzumaki | 15%`, and `Other clan | 70%`. These are example campaign odds, not canonical Naruto probabilities. The chances must total 100%. Players see only the selected name—no numeric die, expression, or total. You can combine several probability types with normal dice groups in one command, or publish a command containing just one probability type. Conditions can use the selected name, for example `Clan == Uchiha`. **Relative weights** remains available for named results that also display a numeric draw.
 
 **Classes and subclasses:** Choose **Add outcome → Class + subclasses**. Enter class chances, then subclass chances on lines such as `Fighter | Champion | 70%`. The form creates a class roll and a conditional subclass table for each class. Only the chosen class's table runs; players see a **Class** and **Subclass** name, without numeric draws. Each class's subclass chances must add up to 100%. You can edit each resulting entry in the builder and Publish the command when ready.
+
+**Numbered lists:** Choose **Add outcome → Numbered list** and paste one option per line. The bot assigns numbers from 1 through the list's length and rolls one matching die (`1dN`) to choose an option. Every option is equally likely. Use **List options** to append more batches, replace an option, or remove numbers/ranges; the list then renumbers automatically. Lists can hold up to 10,000 options and 500,000 characters. Players see the selected number, name, and die roll.
 
 Server owners, Administrator, or Manage Server can create/edit character templates. Moderators can also create/edit FAQs and shops. Published commands are available to all server players, subject to Discord's own application-command permissions. Shops charge the buyer's chosen server currency wallet after a confirmation and save purchases in **My items**. They have unlimited stock. FAQs use a question dropdown.
 

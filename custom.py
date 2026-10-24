@@ -15,6 +15,9 @@ from .wallets import MAX_MONEY, Wallets, moderator, snowflake, text
 MAX_COMMANDS = 20
 MAX_ENTRIES = 20
 MAX_TEMPLATE_DICE = 200
+MAX_LIST_OPTIONS = 10_000
+MAX_LIST_CHARS = 500_000
+MAX_LIST_LABEL = 200
 KINDS = ('roll', 'faq', 'shop')
 OUTCOME_TYPES = ('table', 'probability')
 RESERVED = {'roll', 'calculate', 'avatar', 'wallet', 'wallet-add', 'wallet-remove', 'wallet-transfer',
@@ -56,6 +59,15 @@ def command_name(value):
 
 def new_field():
     return 'field_' + secrets.token_hex(6)
+
+
+def list_options(source):
+    """Read one unnumbered option per line; builders can append more batches."""
+    require(isinstance(source, str) and length(source) <= 4000,
+            'Paste up to 4,000 characters per batch; append more from List options.')
+    options = [text(line, MAX_LIST_LABEL, 'list option') for line in source.splitlines() if line.strip()]
+    require(options, 'Add at least one option, one per line.')
+    return options
 
 
 def odds(source, *, percentages=False):
@@ -112,7 +124,9 @@ def outcome_at(outcomes, ticket):
 
 
 def step_plan(step):
-    return prepare(step['dice'] if step['type'] == 'dice' else f"1d{sum(r['weight'] for r in step['outcomes'])}")
+    return prepare(step['dice'] if step['type'] == 'dice' else
+                   f"1d{len(step['options'])}" if step['type'] == 'list' else
+                   f"1d{sum(r['weight'] for r in step['outcomes'])}")
 
 
 def condition(source, entries, position):
@@ -125,7 +139,7 @@ def condition(source, entries, position):
     name, op, value = match.groups()
     previous = next((s for s in entries[:position] if s['name'].casefold() == name.strip().casefold()), None)
     require(previous is not None, 'Conditions must use an earlier roll name. Move the source roll above this one first.')
-    numeric = previous['type'] == 'dice' and step_plan(previous).numeric
+    numeric = previous['type'] == 'list' or previous['type'] == 'dice' and step_plan(previous).numeric
     if numeric:
         require(re.fullmatch(r'[+-]?\d{1,15}', value), 'Compare this numeric roll to a whole number.')
         value = int(value)
@@ -162,10 +176,21 @@ def validate(data, kind, *, publishing=False):
         item = {'id': raw['id'], 'name': name}
         if kind == 'roll':
             require(not any(c in name for c in '<>='), 'Roll names cannot contain <, >, or =; these are used by conditions.')
-            require(raw.get('type') in ('dice', *OUTCOME_TYPES), 'Choose dice, named probabilities, or relative weights.')
+            require(raw.get('type') in ('dice', 'list', *OUTCOME_TYPES),
+                    'Choose dice, a numbered list, named probabilities, or relative weights.')
             item['type'] = raw['type']
             if item['type'] == 'dice':
                 item['dice'] = prepare(raw.get('dice', '')).expression
+            elif item['type'] == 'list':
+                options = raw.get('options')
+                require(isinstance(options, list) and 1 <= len(options) <= MAX_LIST_OPTIONS,
+                        f'Add 1–{MAX_LIST_OPTIONS:,} numbered options.')
+                require(all(isinstance(option, str) for option in options), 'Every list option must be text.')
+                require(sum(length(option) for option in options) <= MAX_LIST_CHARS,
+                        f'Keep the list under {MAX_LIST_CHARS:,} characters.')
+                item['options'] = [text(option, MAX_LIST_LABEL, 'list option') for option in options]
+                require(len({option.casefold() for option in item['options']}) == len(item['options']),
+                        'Give every list option different text.')
             else:
                 require(isinstance(raw.get('outcomes'), list) and 1 <= len(raw['outcomes']) <= 25 and
                         all(isinstance(r, dict) and isinstance(r.get('name'), str) and type(r.get('weight')) is int
@@ -223,13 +248,22 @@ def roll_definition(document, draw):
         if entry['type'] in OUTCOME_TYPES:
             outcome = outcome_at(entry['outcomes'], result['total'])
             require(outcome is not None, 'Could not select a valid named outcome.')
+        elif entry['type'] == 'list':
+            ticket = result['total']
+            require(type(ticket) is int and 1 <= ticket <= len(entry['options']),
+                    'Could not select a valid numbered option.')
+            outcome = entry['options'][ticket - 1]
         values = values_of(result)
-        completed[entry['id']] = outcome if outcome is not None else result['total'] if result['total'] is not None else values[0] if len(values) == 1 else values
+        completed[entry['id']] = (result['total'] if entry['type'] == 'list' else outcome if outcome is not None else
+                                  result['total'] if result['total'] is not None else values[0] if len(values) == 1 else values)
         if entry['type'] == 'probability':
             # The internal sample exists only to share the Control pipeline.
             # Neither the player payload nor its replay receipt exposes a die.
             results.append({'id': entry['id'], 'name': entry.get('display_name', entry['name']),
                             'type': 'probability', 'outcome': outcome})
+        elif entry['type'] == 'list':
+            results.append({'id': entry['id'], 'name': entry['name'], 'type': 'list',
+                            'number': result['total'], 'dice': result, 'outcome': outcome})
         else:
             results.append({'id': entry['id'], 'name': entry['name'], 'dice': result, 'outcome': outcome})
     return {'title': document['title'], 'description': document['description'], 'color': document['color'], 'results': results}

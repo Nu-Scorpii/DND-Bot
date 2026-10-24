@@ -4,7 +4,7 @@ import copy
 import logging
 import re
 import discord
-from .custom import MAX_ENTRIES, OUTCOME_TYPES, allowed, manager, condition, condition_text, new_field, odds, odds_text, percentage, roll_definition
+from .custom import MAX_ENTRIES, MAX_LIST_OPTIONS, OUTCOME_TYPES, allowed, manager, condition, condition_text, list_options, new_field, odds, odds_text, percentage, roll_definition
 from .custom_ui import SessionView, Choice, card, character_embeds, ICONS, NO_MENTIONS
 from .dice import RNG
 from .display import safe, chunks, length, short
@@ -22,6 +22,9 @@ HELP = ('**Create your own command**\nChoose New command, pick Character rolls, 
         'Add outcome → Class + subclasses creates one class roll and a separate subclass table for each class. '
         'Enter Class | chance for classes, then Class | Subclass | chance for each subclass. '
         'Each class and each of its subclass tables must total 100%. Only the matching subclass table rolls. '
+        'Add outcome → Numbered list takes one option per line, numbers them automatically, and rolls 1dN for N options. '
+        'Use List options to append more batches, edit one number, or remove a number or range. '
+        'The selected number and option appear in the result; each option has the same chance. '
         'Relative weights is an alternative that shows the name and numeric draw: 1 and 3 mean 25% and 75%. '
         'Positive decimals with up to four decimal places work. '
         'Use Condition for an earlier roll: Bending >= 61 or Nation == Fire. '
@@ -35,7 +38,8 @@ HELP = ('**Create your own command**\nChoose New command, pick Character rolls, 
         'Select a command again to refresh after another editor makes changes. Preview draws normal dice privately '
         'without changing saved results.\n\n'
         '**Limits**\n20 command slots per server, 20 entries per command, 200 base dice per character, '
-        '25 outcomes per odds table. Normal dice expressions support modifiers and custom faces. '
+        '25 outcomes per odds table; up to 10,000 options and 500,000 characters per numbered list. '
+        'Normal dice expressions support modifiers and custom faces. '
         'Server owner/Administrator/Manage Server can edit characters; server moderators can edit FAQs and shops.')
 
 
@@ -84,6 +88,7 @@ class BuilderPanel(SessionView):
     def __init__(self, bot, interaction):
         super().__init__(bot, interaction)
         self.context, self.command, self.selected, self.page = interaction, None, None, 'edit'
+        self.list_page = 0
         self.note = 'Create a command, build its entries, then Publish.'
         self.build()
 
@@ -123,10 +128,24 @@ class BuilderPanel(SessionView):
                 discord.SelectOption(label='Relative weights', value='table', emoji='🎲',
                     description='Relative odds. Show the name and its numeric draw.'),
                 discord.SelectOption(label='Class + subclasses', value='classes', emoji='🛡️',
-                    description='Class odds with different subclass odds for each class.')], self.outcome_kind,
+                    description='Class odds with different subclass odds for each class.'),
+                discord.SelectOption(label='Numbered list', value='list', emoji='📜',
+                    description='One option per line. Automatically roll 1dN for N options.')], self.outcome_kind,
                     placeholder='Choose how this outcome works'))
             self.add_button('Back', self.back)
             self.add_button('Help', self.help)
+            return
+        if self.page == 'list':
+            entry = self.selected_list()
+            count = len(entry['options'])
+            self.list_page = min(self.list_page, (count - 1) // 15)
+            self.add_button('Append options', self.append_options, row=1)
+            self.add_button('Replace option', self.replace_option, row=1)
+            self.add_button('Remove options', self.remove_options, row=1)
+            self.add_button('Previous', self.list_previous, row=2, disabled=self.list_page == 0)
+            self.add_button('Next', self.list_next, row=2, disabled=(self.list_page + 1) * 15 >= count)
+            self.add_button('Back', self.back, row=3)
+            self.add_button('Help', self.help, row=3)
             return
         self.add_item(Choice(self, [discord.SelectOption(label=f"/{c['name']}" + (' · archived' if c['archived'] else ''),
             value=str(c['id']), emoji=ICONS[c['kind']], description=c['draft']['title'][:100],
@@ -148,6 +167,9 @@ class BuilderPanel(SessionView):
             self.add_button('Move down', self.move_down, row=3, disabled=self.selected is None or entries[-1]['id'] == self.selected)
             self.add_button('Name & style', self.settings, row=3)
             self.add_button('Preview', self.preview, row=3)
+            if kind == 'roll':
+                self.add_button('List options', self.open_list, row=3,
+                                disabled=not any(e['id'] == self.selected and e['type'] == 'list' for e in entries))
             if kind == 'shop': self.add_button('Wallet', self.wallet, row=3)
             self.add_button('Publish', self.publish, row=4, style=discord.ButtonStyle.success, disabled=not entries)
             self.add_button('Unpublish', self.unpublish, row=4, disabled=self.command['published'] is None)
@@ -163,7 +185,20 @@ class BuilderPanel(SessionView):
             embed.add_field(name='Players see', value='**Nation**\nWater Tribes\n\nA named result, with no numeric die or total.', inline=False)
             embed.add_field(name='Relative weights', value='An alternative for ratios such as 1 : 3. Includes a numeric draw in the result.', inline=False)
             embed.add_field(name='Class + subclasses', value='Add class chances and a subclass table for each class in one form. Only the chosen class’s subclasses roll.', inline=False)
+            embed.add_field(name='Numbered list', value='One option per line, equally likely. It numbers the list and rolls one die with a side for each option. Append more batches after creating it.', inline=False)
             embed.set_footer(text='Mix outcomes and dice groups in the same command')
+            return embed
+        if self.page == 'list':
+            entry = self.selected_list()
+            options = entry['options']
+            start = self.list_page * 15
+            lines = [f'`{i + 1}.` {safe(short(option, 120))}'
+                     for i, option in enumerate(options[start:start + 15], start)]
+            embed = discord.Embed(title=f'📜 {safe(entry["name"])} · numbered list',
+                                  description='\n'.join(lines), colour=self.command['draft']['color'])
+            embed.add_field(name='Roll', value=f'{len(options):,} options → `1d{len(options)}`', inline=False)
+            embed.set_footer(text=f'Page {self.list_page + 1}/{(len(options) - 1) // 15 + 1} • '
+                                  'Append, replace, or remove options in the draft, then Publish')
             return embed
         if self.command is None or self.page == 'new':
             embed = discord.Embed(title='✦ Server workshop', colour=0x8B5CF6,
@@ -184,6 +219,12 @@ class BuilderPanel(SessionView):
         if entry:
             if self.command['kind'] == 'roll':
                 if entry['type'] == 'dice': details = f"🎲 `{safe(entry['dice'])}`"
+                elif entry['type'] == 'list':
+                    details = (f"📜 **{len(entry['options']):,} numbered options** · `1d{len(entry['options'])}`\n"
+                               'Use List options to browse and change them.\n' +
+                               '\n'.join(f"`{i}.` {safe(short(option, 80))}"
+                                         for i, option in enumerate(entry['options'][:5], 1)))
+                    if len(entry['options']) > 5: details += '\n…'
                 else:
                     total = sum(o['weight'] for o in entry['outcomes'])
                     details = ('✨ Named probabilities · names only\n' if entry['type'] == 'probability' else '🎲 Relative weights\n')
@@ -204,14 +245,20 @@ class BuilderPanel(SessionView):
         require(value.isdecimal(), 'Choose a command.')
         command = self.bot.customs.get(self.guild_id, int(value))
         require(allowed(interaction, command['kind']), 'Your permissions do not allow editing this command type.')
-        self.command, self.selected = command, None
+        self.command, self.selected, self.list_page = command, None, 0
         self.note = 'Draft loaded. Changes stay private until Publish.'
         await self.update(interaction)
 
     async def choose_entry(self, interaction, value):
         require(any(e['id'] == value for e in self.command['draft']['entries']), 'Choose a listed entry.')
         self.selected = value
+        self.list_page = 0
         await self.update(interaction)
+
+    def selected_list(self):
+        entry = next((e for e in self.command['draft']['entries'] if e['id'] == self.selected), None) if self.command else None
+        require(entry is not None and entry['type'] == 'list', 'Select a numbered list entry first.')
+        return entry
 
     async def new(self, interaction):
         self.page = 'new'
@@ -227,6 +274,28 @@ class BuilderPanel(SessionView):
         if self.command and not allowed(interaction, self.command['kind']): self.command = None
         await self.update(interaction)
 
+    async def open_list(self, interaction):
+        self.selected_list()
+        self.list_page, self.page = 0, 'list'
+        await self.update(interaction)
+
+    async def list_previous(self, interaction):
+        self.list_page = max(0, self.list_page - 1)
+        await self.update(interaction)
+
+    async def list_next(self, interaction):
+        self.list_page = min(self.list_page + 1, (len(self.selected_list()['options']) - 1) // 15)
+        await self.update(interaction)
+
+    async def append_options(self, interaction):
+        await interaction.response.send_modal(ListInput(self, 'append'))
+
+    async def replace_option(self, interaction):
+        await interaction.response.send_modal(ListInput(self, 'replace'))
+
+    async def remove_options(self, interaction):
+        await interaction.response.send_modal(ListInput(self, 'remove'))
+
     async def add_entry(self, interaction):
         await interaction.response.send_modal(BuilderInput(self, 'entry', entry_type='dice'))
 
@@ -235,7 +304,7 @@ class BuilderPanel(SessionView):
         await self.update(interaction)
 
     async def outcome_kind(self, interaction, value):
-        require(value in (*OUTCOME_TYPES, 'classes') and self.command['kind'] == 'roll', 'Choose a valid outcome type.')
+        require(value in (*OUTCOME_TYPES, 'classes', 'list') and self.command['kind'] == 'roll', 'Choose a valid outcome type.')
         await interaction.response.send_modal(BuilderInput(self, 'classes' if value == 'classes' else 'entry', entry_type=value))
 
     async def edit_entry(self, interaction):
@@ -247,10 +316,10 @@ class BuilderPanel(SessionView):
     async def settings(self, interaction):
         await interaction.response.send_modal(BuilderInput(self, 'settings'))
 
-    async def save_data(self, interaction, data, *, name=None):
+    async def save_data(self, interaction, data, *, name=None, page='edit'):
         self.command = self.bot.customs.save(interaction.user.id, self.guild_id, self.command['id'], self.command['revision'],
             data, name=name, **self.permissions(interaction))
-        self.page = 'edit'
+        self.page = page
         self.note = '✓ Draft saved. Preview or Publish when ready.'
         await self.update(interaction)
 
@@ -360,6 +429,10 @@ class BuilderInput(discord.ui.Modal):
                     self.field('outcomes', 'Outcome | chance % (total must be 100%)' if exact else 'One outcome | weight per line',
                                3500, default=odds_text(old.get('outcomes', []), percentages=exact),
                                placeholder='Fire | 25%\nWater | 25%\nEarth | 25%\nNomad | 25%' if exact else 'Common | 3\nRare | 1', long=True)
+                elif self.entry_type == 'list':
+                    if action == 'entry':
+                        self.field('options', 'One option per line (numbered for you)', 4000,
+                                   placeholder='Sword\nShield\nPotion', long=True)
                 else:
                     self.field('dice', 'Dice expression', 500, default=old.get('dice', ''), placeholder='1d5, 6d20, or 1d20+2')
                 self.field('when', 'Only when… (optional)', 200, default=condition_text(old, panel.command['draft']['entries']),
@@ -414,6 +487,8 @@ class BuilderInput(discord.ui.Modal):
                     if self.kind == 'roll':
                         entry['type'] = self.entry_type
                         if self.entry_type in OUTCOME_TYPES: entry['outcomes'] = odds(values['outcomes'], percentages=self.entry_type == 'probability')
+                        elif self.entry_type == 'list':
+                            if 'options' in values: entry['options'] = list_options(values['options'])
                         else: entry['dice'] = values['dice']
                         if 'display_name' in values: entry['display_name'] = values['display_name']
                     elif self.kind == 'faq': entry['answer'] = values['answer']
@@ -433,3 +508,72 @@ class BuilderInput(discord.ui.Modal):
     async def on_error(self, interaction, error):
         log.warning('Builder form failed: %s.', type(error).__name__)
         await reply(interaction, 'Could not save this form. Select the command again to check its current draft.')
+
+
+class ListInput(discord.ui.Modal):
+    """Edit one numbered list without squeezing its full content into a modal."""
+    def __init__(self, panel, action):
+        self.panel, self.action = panel, action
+        self.identity, self.revision, self.selected = panel.command['id'], panel.command['revision'], panel.selected
+        panel.selected_list()
+        super().__init__(title={'append': 'Append numbered options', 'replace': 'Replace an option',
+                                'remove': 'Remove numbered options'}[action], timeout=300)
+        self.fields = {}
+        if action == 'append':
+            self.field('options', 'One new option per line', 4000, long=True,
+                       placeholder='One new option\nAnother option')
+        elif action == 'replace':
+            self.field('number', 'Option number to replace', 5, placeholder='16')
+            self.field('option', 'New option text', 200, long=True, placeholder='Replacement option')
+        else:
+            self.field('numbers', 'Numbers or ranges to remove', 200, placeholder='2, 5-8, 21')
+
+    def field(self, key, label, limit, *, long=False, placeholder=None):
+        field = discord.ui.TextInput(max_length=limit, placeholder=placeholder,
+                                     style=discord.TextStyle.paragraph if long else discord.TextStyle.short)
+        self.fields[key] = field
+        self.add_item(discord.ui.Label(text=label, component=field))
+
+    async def interaction_check(self, interaction):
+        return await self.panel.authorize(interaction)
+
+    async def on_submit(self, interaction):
+        if not await self.panel.authorize(interaction): return
+        try:
+            require(allowed(interaction, 'roll'), 'Your server permissions no longer allow this command type.')
+            require(self.panel.page == 'list' and self.panel.selected == self.selected and
+                    (self.panel.command['id'], self.panel.command['revision']) == (self.identity, self.revision),
+                    'The editor changed. Open a fresh form.')
+            values = {key: field.value.strip() for key, field in self.fields.items()}
+            data = copy.deepcopy(self.panel.command['draft'])
+            entry = next((e for e in data['entries'] if e['id'] == self.selected and e['type'] == 'list'), None)
+            require(entry is not None, 'That numbered list was removed. Select a current entry.')
+            options = entry['options']
+            if self.action == 'append':
+                options.extend(list_options(values['options']))
+                require(len(options) <= MAX_LIST_OPTIONS, f'A numbered list holds at most {MAX_LIST_OPTIONS:,} options.')
+                self.panel.list_page = (len(options) - 1) // 15
+            elif self.action == 'replace':
+                require(values['number'].isdecimal() and 1 <= int(values['number']) <= len(options),
+                        f'Choose a number from 1 to {len(options):,}.')
+                options[int(values['number']) - 1] = text(values['option'], 200, 'list option')
+                self.panel.list_page = (int(values['number']) - 1) // 15
+            else:
+                selected = set()
+                for group in values['numbers'].split(','):
+                    match = re.fullmatch(r'\s*(\d{1,5})(?:\s*-\s*(\d{1,5}))?\s*', group)
+                    require(match, 'Enter option numbers or ranges, such as 2, 5-8, 21.')
+                    first, last = int(match[1]), int(match[2] or match[1])
+                    require(1 <= first <= last <= len(options),
+                            f'Choose numbers from 1 to {len(options):,}, with ranges in ascending order.')
+                    selected.update(range(first - 1, last))
+                require(len(selected) < len(options), 'Keep at least one option in the list.')
+                entry['options'] = [value for index, value in enumerate(options) if index not in selected]
+            await interaction.response.defer()
+            await self.panel.save_data(interaction, data, page='list')
+        except RollError as exc:
+            await reply(interaction, '⚠️ ' + safe(exc))
+
+    async def on_error(self, interaction, error):
+        log.warning('Numbered list form failed: %s.', type(error).__name__)
+        await reply(interaction, 'Could not save this list. Select the command again to check its current draft.')

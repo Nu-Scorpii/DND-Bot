@@ -1,4 +1,4 @@
-# Your server's command workshop · 4.2.0
+# Your server's command workshop · 4.3.0
 
 **Start with `/builder`.** The workshop opens a private card with dropdowns, buttons, and forms. Pick **New command**, choose a type, and name the slash command. All changes save as drafts; **Publish** makes them available to players.
 
@@ -58,6 +58,22 @@ Mage | Illusionist | 75%
 The class chances must total **100%**, and the subclasses of **each** class must separately total **100%**. Give every class at least one subclass; one subclass can be `100%`. The form saves one class entry plus one conditional subclass entry for each class. For example, **Class: Mage** rolls only the Mage subclass table, and the player sees **Subclass: Evoker** or **Subclass: Illusionist**. Both results show names only. This uses one entry per class plus one for the class roll, within the command's 20 entry limit.
 
 In the editor, each subclass entry has a distinct name such as `Subclass · Mage`, a **Player label** of `Subclass`, and a condition pointing to its class. Edit its probabilities or player label as needed. If you change a class outcome's name, also update its matching subclass entry's condition so it still runs. Preview the draft, then Publish to update the live command.
+
+## Add a large numbered list
+
+Choose **Add outcome → Numbered list**, give the roll a name such as `Treasure`, and paste one unnumbered option per line:
+
+```text
+Sword
+Shield
+Potion
+```
+
+The bot numbers these options `1. Sword`, `2. Shield`, and `3. Potion`. It rolls **1d3** and shows the selected number, option, and roll. With 3,000 options it rolls **1d3000**. Each option has the same chance. Use Named probabilities if you need different chances.
+
+Each form accepts up to 4,000 characters. Select the new list entry and press **List options** to append more batches until it has up to **10,000 options** and **500,000 characters**. That screen shows 15 numbered options per page, with Previous and Next buttons. **Replace option** changes the text at a number; **Remove options** accepts numbers and ranges such as `2, 5-8, 21`. The remaining options renumber from 1. Keep one option in the list. Each line can contain up to 200 characters, and duplicate option text is rejected.
+
+Use **Edit** to change the roll's name or condition. Other rolls can use a condition on its selected number, such as `Treasure == 3` or `Treasure >= 100`. Preview, then Publish to make the updated list available to players. Only the live published version is used by player rolls.
 
 ## Relative weights as an alternative
 

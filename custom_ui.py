@@ -28,6 +28,9 @@ def character_embeds(character, name='Player', *, preview=False):
     for entry in character['results']:
         if entry.get('type') == 'probability':
             body = f"**{safe(entry['outcome'])}**"
+        elif entry.get('type') == 'list':
+            body = (f"**{entry['number']}. {safe(entry['outcome'])}**\n"
+                    f"Roll: `{safe(entry['dice']['expression'])}` → `{entry['number']}`")
         else:
             bodies = [message.split('\n\n', 1)[1] for message in roll_messages(entry['dice'])]
             body = '\n'.join(bodies)

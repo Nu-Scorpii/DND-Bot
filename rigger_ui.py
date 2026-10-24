@@ -114,6 +114,8 @@ def change_value(rule, customs=None):
             entry = next((e for e in template['published']['entries'] if e['id'] == rule['part']), None)
             name = outcome_at(entry['outcomes'], value) if entry and entry['type'] in OUTCOME_TYPES else None
             if name is not None: return f'Force {name}'
+            if entry and entry['type'] == 'list' and type(value) is int and 1 <= value <= len(entry['options']):
+                return f'Force #{value} · {short(entry["options"][value - 1], 75)}'
         except RollError:
             pass  # Removed/unpublished templates still have removable active settings.
     if mode in ('good', 'bad'):
@@ -370,7 +372,8 @@ class RiggerPanel(discord.ui.View):
         template = self.bot.customs.rig_template(self.draft['scope'])
         return {self.draft['scope']: (f"/{template['name']} · Whole character", 'Luck or extra dice on all applicable rolls.'),
                 **{e['id']: (f"/{template['name']} · {e['name']}",
-                             short(e.get('dice') or 'Weighted outcomes; Force has named presets.'))
+                             short(e.get('dice') or ('Numbered list; enter an option number.' if e['type'] == 'list'
+                                                     else 'Weighted outcomes; Force has named presets.')))
                    for e in template['published']['entries']}}
 
     def custom_entry(self):
